@@ -49,10 +49,7 @@
       <label><input type="checkbox" id="filter-dupe"> Nur mögliche Duplikate</label>
       <span class="count" id="count"></span>
     </div>
-    <div style="display:flex;gap:8px">
-      <button class="btn-secondary" id="seed-btn">Beispieldaten laden</button>
-      <button class="btn-primary" id="new-btn">+ Neuer Kunde</button>
-    </div>
+    <button class="btn-primary" id="new-btn">+ Neuer Kunde</button>
   </div>
   <div style="overflow-x:auto">
     <table>
@@ -176,12 +173,6 @@ fEls.hv.addEventListener('input', () => {
 });
 
 $('new-btn').addEventListener('click', () => openModal());
-$('seed-btn').addEventListener('click', () => {
-  if(customers.length && !confirm('Beispieldaten zusätzlich zu den vorhandenen Kunden laden?')) return;
-  customers = customers.concat(seedData());
-  save();
-  render();
-});
 $('cancel-btn').addEventListener('click', closeModal);
 $('modal-overlay').addEventListener('click', e => { if(e.target.id==='modal-overlay') closeModal(); });
 document.addEventListener('keydown', e => { if(e.key==='Escape') closeModal(); });
