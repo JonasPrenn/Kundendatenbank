@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kundendatenbank</title>
+<style>
+  :root{--bg:#f4f5f7;--card:#fff;--border:#dde1e6;--text:#1f2430;--muted:#6b7280;--accent:#2563eb;--danger:#dc2626;--dupe:#fff7e0;}
+  *{box-sizing:border-box}
+  body{font-family:system-ui,Segoe UI,Arial,sans-serif;background:var(--bg);color:var(--text);margin:0;padding:24px;}
+  h1{font-size:1.4rem;margin:0 0 16px}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:18px;margin-bottom:20px;}
+  form{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;}
+  label{font-size:.78rem;color:var(--muted);display:block;margin-bottom:3px}
+  input{width:100%;padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:.9rem}
+  .full{grid-column:1/-1}
+  .actions{grid-column:1/-1;display:flex;gap:8px;margin-top:4px}
+  button{cursor:pointer;border:none;border-radius:6px;padding:8px 16px;font-size:.85rem;font-weight:600}
+  .btn-primary{background:var(--accent);color:#fff}
+  .btn-secondary{background:#e5e7eb;color:#1f2430}
+  .btn-danger{background:var(--danger);color:#fff;padding:4px 10px;font-size:.75rem}
+  .toolbar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
+  .toolbar input,.toolbar select{padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:.85rem}
+  .toolbar label{display:flex;align-items:center;gap:5px;font-size:.85rem;color:var(--text);margin:0}
+  table{width:100%;border-collapse:collapse;font-size:.85rem}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border)}
+  th{color:var(--muted);font-weight:600;cursor:pointer;user-select:none}
+  tr.dupe{background:var(--dupe)}
+  .badge{background:#f59e0b;color:#fff;font-size:.68rem;padding:2px 6px;border-radius:10px;margin-left:6px}
+  .empty{color:var(--muted);padding:20px;text-align:center}
+  .count{color:var(--muted);font-size:.8rem;margin-left:auto}
+</style>
+</head>
+<body>
+<h1>Kundendatenbank</h1>
+
+<div class="card">
+  <form id="form">
+    <div><label>Kundennummer</label><input id="f-nr" required></div>
+    <div class="full"><label>Objektbezeichnung</label><input id="f-obj" required></div>
+    <div><label>Straße / Hausnummer</label><input id="f-str" required></div>
+    <div><label>PLZ</label><input id="f-plz" required></div>
+    <div><label>Ort</label><input id="f-ort" required></div>
+    <div><label>Hausverwaltung</label><input id="f-hv" list="hv-list" required></div>
+    <datalist id="hv-list"></datalist>
+    <div><label>Gültig von</label><input id="f-von" type="date"></div>
+    <div><label>Gültig bis</label><input id="f-bis" type="date"></div>
+    <div class="actions">
+      <button type="submit" class="btn-primary" id="submit-btn">Kunde anlegen</button>
+      <button type="button" class="btn-secondary" id="cancel-btn" style="display:none">Abbrechen</button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <div class="toolbar">
+    <input id="search" placeholder="Suche (alle Felder)…" style="min-width:220px">
+    <select id="filter-ort"><option value="">Alle Orte</option></select>
+    <select id="filter-hv"><option value="">Alle Hausverwaltungen</option></select>
+    <label><input type="checkbox" id="filter-dupe"> Nur mögliche Duplikate</label>
+    <span class="count" id="count"></span>
+  </div>
+  <div style="overflow-x:auto">
+    <table>
+      <thead>
+        <tr>
+          <th data-k="nr">Kd.-Nr.</th><th data-k="obj">Objekt</th><th data-k="str">Straße</th>
+          <th data-k="plz">PLZ</th><th data-k="ort">Ort</th><th data-k="hv">Hausverwaltung</th>
+          <th data-k="von">Gültig von</th><th data-k="bis">Gültig bis</th><th></th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div id="empty" class="empty" style="display:none">Keine Kunden gefunden.</div>
+  </div>
+</div>
+
+<script>
+const LS_KEY = 'kundendatenbank';
+let customers = JSON.parse(localStorage.getItem(LS_KEY) || '[]');
+let editingId = null;
+let sortKey = 'nr', sortAsc = true;
+
+const $ = id => document.getElementById(id);
+const fields = ['nr','obj','str','plz','ort','hv','von','bis'];
+const fEls = { nr:$('f-nr'), obj:$('f-obj'), str:$('f-str'), plz:$('f-plz'), ort:$('f-ort'), hv:$('f-hv'), von:$('f-von'), bis:$('f-bis') };
+
+function save(){ localStorage.setItem(LS_KEY, JSON.stringify(customers)); }
+
+// --- Levenshtein distance for fuzzy duplicate detection ---
+function levenshtein(a, b){
+  a = (a||'').toLowerCase().trim(); b = (b||'').toLowerCase().trim();
+  const m = a.length, n = b.length;
+  if(!m) return n; if(!n) return m;
+  const d = Array.from({length:m+1},(_,i)=>[i,...Array(n).fill(0)]);
+  for(let j=0;j<=n;j++) d[0][j]=j;
+  for(let i=1;i<=m;i++) for(let j=1;j<=n;j++){
+    d[i][j] = a[i-1]===b[j-1] ? d[i-1][j-1] : 1+Math.min(d[i-1][j],d[i][j-1],d[i-1][j-1]);
+  }
+  return d[m][n];
+}
+function normAddr(c){ return (c.str+' '+c.plz+' '+c.ort).toLowerCase().replace(/\s+/g,' ').trim(); }
+
+function computeDupes(){
+  const dupeIds = new Set();
+  for(let i=0;i<customers.length;i++){
+    for(let j=i+1;j<customers.length;j++){
+      const a=customers[i], b=customers[j];
+      if(a.id===b.id) continue;
+      const sameAddr = normAddr(a)===normAddr(b) || levenshtein(normAddr(a),normAddr(b))<=2;
+      const closeObj = levenshtein(a.obj,b.obj)<=2;
+      if(sameAddr && (closeObj || a.plz===b.plz && a.str.toLowerCase()===b.str.toLowerCase())){
+        dupeIds.add(a.id); dupeIds.add(b.id);
+      }
+    }
+  }
+  return dupeIds;
+}
+
+function refreshDatalists(){
+  const hvList = $('hv-list'); hvList.innerHTML='';
+  const hvs = [...new Set(customers.map(c=>c.hv).filter(Boolean))];
+  hvs.forEach(h=>{ const o=document.createElement('option'); o.value=h; hvList.appendChild(o); });
+
+  const fo = $('filter-ort'), fh = $('filter-hv');
+  const curOrt = fo.value, curHv = fh.value;
+  fo.innerHTML='<option value="">Alle Orte</option>' + [...new Set(customers.map(c=>c.ort).filter(Boolean))].sort()
+    .map(o=>`<option ${o===curOrt?'selected':''}>${o}</option>`).join('');
+  fh.innerHTML='<option value="">Alle Hausverwaltungen</option>' + hvs.sort()
+    .map(h=>`<option ${h===curHv?'selected':''}>${h}</option>`).join('');
+}
+
+// Autofill address when an existing Hausverwaltung is entered
+fEls.hv.addEventListener('input', () => {
+  if(editingId) return; // don't clobber while editing an existing record on purpose
+  const val = fEls.hv.value.trim().toLowerCase();
+  if(!val) return;
+  const match = customers.find(c => c.hv.trim().toLowerCase() === val);
+  if(match){
+    if(!fEls.str.value) fEls.str.value = match.str;
+    if(!fEls.plz.value) fEls.plz.value = match.plz;
+    if(!fEls.ort.value) fEls.ort.value = match.ort;
+  }
+});
+
+$('form').addEventListener('submit', e => {
+  e.preventDefault();
+  const data = { id: editingId || crypto.randomUUID() };
+  fields.forEach(k => data[k] = fEls[k].value.trim());
+  if(editingId){
+    customers = customers.map(c => c.id===editingId ? data : c);
+  } else {
+    customers.push(data);
+  }
+  save();
+  resetForm();
+  render();
+});
+
+$('cancel-btn').addEventListener('click', resetForm);
+
+function resetForm(){
+  editingId = null;
+  $('form').reset();
+  $('submit-btn').textContent = 'Kunde anlegen';
+  $('cancel-btn').style.display = 'none';
+}
+
+function editCustomer(id){
+  const c = customers.find(x=>x.id===id);
+  if(!c) return;
+  editingId = id;
+  fields.forEach(k => fEls[k].value = c[k] || '');
+  $('submit-btn').textContent = 'Änderungen speichern';
+  $('cancel-btn').style.display = 'inline-block';
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+function deleteCustomer(id){
+  if(!confirm('Diesen Kunden wirklich löschen?')) return;
+  customers = customers.filter(c=>c.id!==id);
+  save();
+  render();
+}
+
+document.querySelectorAll('th[data-k]').forEach(th => {
+  th.addEventListener('click', () => {
+    const k = th.dataset.k;
+    if(sortKey===k) sortAsc=!sortAsc; else { sortKey=k; sortAsc=true; }
+    render();
+  });
+});
+
+['search','filter-ort','filter-hv','filter-dupe'].forEach(id => $(id).addEventListener('input', render));
+
+function render(){
+  refreshDatalists();
+  const dupeIds = computeDupes();
+  const q = $('search').value.toLowerCase().trim();
+  const fOrt = $('filter-ort').value;
+  const fHv = $('filter-hv').value;
+  const onlyDupes = $('filter-dupe').checked;
+
+  let list = customers.filter(c => {
+    if(fOrt && c.ort!==fOrt) return false;
+    if(fHv && c.hv!==fHv) return false;
+    if(onlyDupes && !dupeIds.has(c.id)) return false;
+    if(q){
+      const hay = fields.map(k=>c[k]||'').join(' ').toLowerCase();
+      if(!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  list.sort((a,b) => {
+    const av=(a[sortKey]||'').toString(), bv=(b[sortKey]||'').toString();
+    return sortAsc ? av.localeCompare(bv,'de',{numeric:true}) : bv.localeCompare(av,'de',{numeric:true});
+  });
+
+  const tbody = $('rows');
+  tbody.innerHTML = list.map(c => `
+    <tr class="${dupeIds.has(c.id)?'dupe':''}">
+      <td>${esc(c.nr)}</td>
+      <td>${esc(c.obj)} ${dupeIds.has(c.id)?'<span class="badge">Duplikat?</span>':''}</td>
+      <td>${esc(c.str)}</td>
+      <td>${esc(c.plz)}</td>
+      <td>${esc(c.ort)}</td>
+      <td>${esc(c.hv)}</td>
+      <td>${esc(c.von)}</td>
+      <td>${esc(c.bis)}</td>
+      <td>
+        <button class="btn-secondary" style="padding:4px 10px;font-size:.75rem" onclick="editCustomer('${c.id}')">Bearbeiten</button>
+        <button class="btn-danger" onclick="deleteCustomer('${c.id}')">Löschen</button>
+      </td>
+    </tr>`).join('');
+
+  $('empty').style.display = list.length ? 'none' : 'block';
+  $('count').textContent = `${list.length} von ${customers.length} Kunden`;
+}
+
+function esc(s){ return (s||'').toString().replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+render();
+</script>
+</body>
+</html>
