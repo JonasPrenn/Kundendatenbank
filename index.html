@@ -114,6 +114,10 @@ const fEls = Object.fromEntries(fields.map(k => [k, $('f-'+k)]));
 
 function save(){ localStorage.setItem(LS_KEY, JSON.stringify(customers)); }
 
+// Kein crypto.randomUUID(): das funktioniert nur in sicherem Kontext (https/localhost),
+// nicht aber wenn die Datei lokal per file:// geöffnet wird.
+function uid(){ return 'id-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,10); }
+
 // --- Levenshtein distance for fuzzy duplicate detection ---
 function levenshtein(a, b){
   a = (a||'').toLowerCase().trim(); b = (b||'').toLowerCase().trim();
@@ -203,7 +207,7 @@ function closeModal(){
 
 $('form').addEventListener('submit', e => {
   e.preventDefault();
-  const data = { id: editingId || crypto.randomUUID() };
+  const data = { id: editingId || uid() };
   fields.forEach(k => data[k] = fEls[k].value.trim());
   if(editingId){
     customers = customers.map(c => c.id===editingId ? data : c);
@@ -287,7 +291,7 @@ function esc(s){ return (s||'').toString().replace(/[&<>"']/g, m => ({'&':'&amp;
 // Beispieldaten (Vorarlberg) inkl. zweier Duplikatspaare zum Testen der Erkennung
 function seedData(){
   const mk = (nr,obj,oStr,oPlz,oOrt,hv,hvStr,hvPlz,hvOrt,hvMail,von,bis) =>
-    ({id:crypto.randomUUID(),nr,obj,oStr,oPlz,oOrt,hv,hvStr,hvPlz,hvOrt,hvMail,von,bis});
+    ({id:uid(),nr,obj,oStr,oPlz,oOrt,hv,hvStr,hvPlz,hvOrt,hvMail,von,bis});
   return [
     mk('1001','Wohnanlage Seeblick','Seestraße 12','6900','Bregenz','Alpin Hausverwaltung GmbH','Rathausstraße 5','6900','Bregenz','buchhaltung@alpin-hv.at','2023-01-01','2025-12-31'),
     mk('1002','Haus Rheintal','Poststraße 3','6850','Dornbirn','Rheintal Immobilien Service','Marktplatz 1','6850','Dornbirn','rechnung@rheintal-immo.at','2023-03-01','2026-02-28'),
