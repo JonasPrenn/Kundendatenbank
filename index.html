@@ -99,8 +99,21 @@
 
 <script>
 const LS_KEY = 'kundendatenbank';
-let customers = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
-if(!customers || customers.length === 0){ customers = seedData(); localStorage.setItem(LS_KEY, JSON.stringify(customers)); }
+
+// Safari blockiert localStorage bei lokal geöffneten Dateien (file://) und wirft dabei einen Fehler.
+// Damit die App trotzdem läuft, fangen wir das ab und arbeiten in dem Fall nur im Arbeitsspeicher
+// (Daten bleiben dann für die Sitzung erhalten, aber nicht über einen Neuladen hinaus).
+function loadCustomers(){
+  try { return JSON.parse(localStorage.getItem(LS_KEY) || 'null'); }
+  catch(e){ return null; }
+}
+function save(){
+  try { localStorage.setItem(LS_KEY, JSON.stringify(customers)); }
+  catch(e){ /* z.B. Safari file:// – Daten bleiben nur im Arbeitsspeicher erhalten */ }
+}
+
+let customers = loadCustomers();
+if(!customers || customers.length === 0){ customers = seedData(); save(); }
 
 let editingId = null;
 let sortKey = 'nr', sortAsc = true;
@@ -108,8 +121,6 @@ let sortKey = 'nr', sortAsc = true;
 const $ = id => document.getElementById(id);
 const fields = ['nr','obj','oStr','oPlz','oOrt','hv','hvStr','hvPlz','hvOrt','hvMail','von','bis'];
 const fEls = Object.fromEntries(fields.map(k => [k, $('f-'+k)]));
-
-function save(){ localStorage.setItem(LS_KEY, JSON.stringify(customers)); }
 
 // Kein crypto.randomUUID(): das funktioniert nur in sicherem Kontext (https/localhost),
 // nicht aber wenn die Datei lokal per file:// geöffnet wird.
