@@ -25,6 +25,7 @@
   th{color:var(--muted);font-weight:600;cursor:pointer;user-select:none}
   tr.dupe{background:var(--dupe)}
   .badge{background:#f59e0b;color:#fff;font-size:.68rem;padding:2px 6px;border-radius:10px;margin-left:6px}
+  .note{font-size:.7rem;color:var(--muted);white-space:normal}
   .empty{color:var(--muted);padding:20px;text-align:center}
   .count{color:var(--muted);font-size:.8rem;margin-left:auto}
 
@@ -35,6 +36,9 @@
   .modal form{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
   .full{grid-column:1/-1}
   .modal .actions{grid-column:1/-1;display:flex;gap:8px;margin-top:6px;justify-content:flex-end}
+  .hidden{display:none !important}
+  #hv1-block{border-top:1px dashed var(--border);margin-top:6px;padding-top:10px}
+  #hv1-block .inner{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
 </style>
 </head>
 <body>
@@ -56,8 +60,7 @@
       <thead>
         <tr>
           <th data-k="nr">Kd.-Nr.</th><th data-k="obj">Objekt</th><th data-k="oStr">Objektadresse</th>
-          <th data-k="oOrt">Ort</th><th data-k="hv">Hausverwaltung</th><th data-k="hvMail">Rechnungsmail</th>
-          <th data-k="von">Gültig von</th><th data-k="bis">Gültig bis</th><th></th>
+          <th data-k="oOrt">Ort</th><th data-k="hv">Hausverwaltung</th><th data-k="hvMail">Rechnungsmail</th><th></th>
         </tr>
       </thead>
       <tbody id="rows"></tbody>
@@ -76,18 +79,36 @@
       <div class="full"><label>Objektadresse – Straße / Hausnummer</label><input id="f-oStr" required></div>
       <div><label>PLZ</label><input id="f-oPlz" required></div>
       <div style="grid-column:span 2"><label>Ort</label><input id="f-oOrt" required></div>
+      <div class="full hidden" id="dupe-warning" style="background:#fff7e0;border:1px solid #f59e0b;border-radius:8px;padding:12px"></div>
 
       <div class="section-title">Hausverwaltung</div>
-      <div class="full"><label>Hausverwaltung</label><input id="f-hv" list="hv-list" required></div>
+      <div class="full"><label>Hausverwaltung</label><input id="f-hv0-name" list="hv-list" required></div>
       <datalist id="hv-list"></datalist>
-      <div class="full"><label>Adresse Hausverwaltung – Straße / Hausnummer</label><input id="f-hvStr"></div>
-      <div><label>PLZ</label><input id="f-hvPlz"></div>
-      <div><label>Ort</label><input id="f-hvOrt"></div>
-      <div><label>Rechnungsmail</label><input id="f-hvMail" type="email"></div>
+      <div class="full"><label>Adresse Hausverwaltung – Straße / Hausnummer</label><input id="f-hv0-str"></div>
+      <div><label>PLZ</label><input id="f-hv0-plz"></div>
+      <div><label>Ort</label><input id="f-hv0-ort"></div>
+      <div><label>Rechnungsmail</label><input id="f-hv0-mail" type="email"></div>
+      <div class="full hidden" id="hv0-dates" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div><label>Gültig von</label><input id="f-hv0-von" type="date"></div>
+        <div><label>Gültig bis</label><input id="f-hv0-bis" type="date"></div>
+      </div>
 
-      <div class="section-title">Gültigkeit</div>
-      <div><label>Gültig von</label><input id="f-von" type="date"></div>
-      <div><label>Gültig bis</label><input id="f-bis" type="date"></div>
+      <div class="full hidden" id="hv1-block">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <span class="section-title" style="margin:0">Neue Hausverwaltung (geplanter Wechsel)</span>
+          <button type="button" class="btn-danger" id="remove-hv1-btn">Entfernen</button>
+        </div>
+        <div class="inner">
+          <div class="full"><label>Hausverwaltung</label><input id="f-hv1-name" list="hv-list"></div>
+          <div class="full"><label>Adresse – Straße / Hausnummer</label><input id="f-hv1-str"></div>
+          <div><label>PLZ</label><input id="f-hv1-plz"></div>
+          <div><label>Ort</label><input id="f-hv1-ort"></div>
+          <div><label>Rechnungsmail</label><input id="f-hv1-mail" type="email"></div>
+          <div><label>Gültig von</label><input id="f-hv1-von" type="date"></div>
+          <div><label>Gültig bis</label><input id="f-hv1-bis" type="date"></div>
+        </div>
+      </div>
+      <div class="full"><button type="button" class="btn-secondary" id="add-hv1-btn">+ weitere Hausverwaltung (geplanter Wechsel)</button></div>
 
       <div class="actions">
         <button type="button" class="btn-secondary" id="cancel-btn">Abbrechen</button>
@@ -101,32 +122,30 @@
 const LS_KEY = 'kundendatenbank';
 
 // Safari blockiert localStorage bei lokal geöffneten Dateien (file://) und wirft dabei einen Fehler.
-// Damit die App trotzdem läuft, fangen wir das ab und arbeiten in dem Fall nur im Arbeitsspeicher
-// (Daten bleiben dann für die Sitzung erhalten, aber nicht über einen Neuladen hinaus).
+// Damit die App trotzdem läuft, fangen wir das ab und arbeiten in dem Fall nur im Arbeitsspeicher.
 function loadCustomers(){
   try { return JSON.parse(localStorage.getItem(LS_KEY) || 'null'); }
   catch(e){ return null; }
 }
 function save(){
   try { localStorage.setItem(LS_KEY, JSON.stringify(customers)); }
-  catch(e){ /* z.B. Safari file:// – Daten bleiben nur im Arbeitsspeicher erhalten */ }
+  catch(e){ /* z.B. Safari file:// - Daten bleiben nur im Arbeitsspeicher erhalten */ }
 }
+// Kein crypto.randomUUID(): das funktioniert nur in sicherem Kontext (https/localhost).
+function uid(){ return 'id-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,10); }
 
 let customers = loadCustomers();
 if(!customers || customers.length === 0){ customers = seedData(); save(); }
 
 let editingId = null;
+let dupeConfirmed = false;
 let sortKey = 'nr', sortAsc = true;
 
 const $ = id => document.getElementById(id);
-const fields = ['nr','obj','oStr','oPlz','oOrt','hv','hvStr','hvPlz','hvOrt','hvMail','von','bis'];
-const fEls = Object.fromEntries(fields.map(k => [k, $('f-'+k)]));
+const topFields = ['nr','obj','oStr','oPlz','oOrt'];
+const fEls = Object.fromEntries(topFields.map(k => [k, $('f-'+k)]));
 
-// Kein crypto.randomUUID(): das funktioniert nur in sicherem Kontext (https/localhost),
-// nicht aber wenn die Datei lokal per file:// geöffnet wird.
-function uid(){ return 'id-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,10); }
-
-// --- Levenshtein distance for fuzzy duplicate detection ---
+// --- Levenshtein distance für unscharfe Duplikatserkennung ---
 function levenshtein(a, b){
   a = (a||'').toLowerCase().trim(); b = (b||'').toLowerCase().trim();
   const m = a.length, n = b.length;
@@ -138,28 +157,77 @@ function levenshtein(a, b){
   }
   return d[m][n];
 }
-// Duplicate check uses ONLY the Objektadresse + Objektbezeichnung – the Hausverwaltungsadresse is irrelevant here.
-function normObjAddr(c){ return (c.oStr+' '+c.oPlz+' '+c.oOrt).toLowerCase().replace(/\s+/g,' ').trim(); }
 
+// Duplikatsprüfung nutzt AUSSCHLIESSLICH Objektbezeichnung + Objektadresse.
+// Die Hausverwaltungsadresse zählt bewusst nicht dazu.
 function computeDupes(){
+  const byPlz = {};
+  customers.forEach(c => { (byPlz[c.oPlz] ||= []).push(c); });
   const dupeIds = new Set();
-  for(let i=0;i<customers.length;i++){
-    for(let j=i+1;j<customers.length;j++){
-      const a=customers[i], b=customers[j];
-      if(a.id===b.id) continue;
-      const sameAddr = normObjAddr(a)===normObjAddr(b) || levenshtein(normObjAddr(a),normObjAddr(b))<=2;
-      const closeObj = levenshtein(a.obj,b.obj)<=2;
-      if(sameAddr && (closeObj || (a.oPlz===b.oPlz && a.oStr.toLowerCase()===b.oStr.toLowerCase()))){
-        dupeIds.add(a.id); dupeIds.add(b.id);
+  Object.values(byPlz).forEach(group => {
+    for(let i=0;i<group.length;i++){
+      for(let j=i+1;j<group.length;j++){
+        const a=group[i], b=group[j];
+        const sameStr = levenshtein(a.oStr, b.oStr) <= 2;
+        const closeObj = levenshtein(a.obj, b.obj) <= 2;
+        if(sameStr && closeObj){ dupeIds.add(a.id); dupeIds.add(b.id); }
       }
     }
-  }
+  });
   return dupeIds;
+}
+
+// Gleiche Regel wie computeDupes() für die Liste, aber gegen die aktuell im Formular eingegebenen Werte geprüft.
+function findPotentialDupes(obj, oStr, oPlz, oOrt, excludeId){
+  return customers.filter(c => {
+    if(c.id===excludeId) return false;
+    if(c.oPlz !== oPlz) return false;
+    return levenshtein(c.oStr, oStr) <= 2 && levenshtein(c.obj, obj) <= 2;
+  });
+}
+function showDupeWarning(matches){
+  const box = $('dupe-warning');
+  box.innerHTML = `<div style="font-weight:700;margin-bottom:6px">⚠ Möglicherweise bereits vorhanden (${matches.length})</div>` +
+    matches.map(m => `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 0;border-top:1px solid #f0d58a">
+        <div style="font-size:.85rem">
+          <strong>${esc(m.obj)}</strong><br>
+          <span class="note">${esc(m.oStr)}, ${esc(m.oPlz)} ${esc(m.oOrt)} · Kd.-Nr. ${esc(m.nr)}</span>
+        </div>
+        <button type="button" class="btn-secondary" style="white-space:nowrap" onclick="jumpToCustomer('${m.id}')">Zum Datensatz</button>
+      </div>`).join('') +
+    `<div class="note" style="margin-top:8px">Falls es sich wirklich um einen neuen bzw. anderen Kunden handelt, einfach nochmal auf „Speichern" klicken.</div>`;
+  box.classList.remove('hidden');
+  box.scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+function hideDupeWarning(){ $('dupe-warning').classList.add('hidden'); $('dupe-warning').innerHTML=''; }
+function jumpToCustomer(id){
+  const m = customers.find(c=>c.id===id);
+  if(!m) return;
+  closeModal();
+  $('filter-ort').value=''; $('filter-hv').value=''; $('filter-dupe').checked=false;
+  $('search').value = m.nr;
+  render();
+  requestAnimationFrame(() => {
+    const row = document.querySelector(`tr[data-id="${id}"]`);
+    if(row){
+      row.scrollIntoView({behavior:'smooth', block:'center'});
+      row.style.outline='2px solid var(--accent)';
+      setTimeout(()=>{ row.style.outline=''; }, 2000);
+    }
+  });
+}
+
+function allHvNames(){ return [...new Set(customers.flatMap(c => c.hvs.map(h=>h.hv)).filter(Boolean))]; }
+
+function findHvByName(name){
+  for(const c of customers){ for(const h of c.hvs){ if(h.hv.trim().toLowerCase()===name) return h; } }
+  return null;
 }
 
 function refreshDatalists(){
   const hvList = $('hv-list'); hvList.innerHTML='';
-  const hvs = [...new Set(customers.map(c=>c.hv).filter(Boolean))];
+  const hvs = allHvNames();
   hvs.forEach(h=>{ const o=document.createElement('option'); o.value=h; hvList.appendChild(o); });
 
   const fo = $('filter-ort'), fh = $('filter-hv');
@@ -170,34 +238,79 @@ function refreshDatalists(){
     .map(h=>`<option ${h===curHv?'selected':''}>${h}</option>`).join('');
 }
 
-// Autofill Hausverwaltungsdaten (Adresse + Rechnungsmail) wenn diese HV bereits bei einem anderen Kunden erfasst ist.
-// Greift nur solange die Felder noch leer sind, damit man sie danach frei überschreiben kann.
-fEls.hv.addEventListener('input', () => {
-  const val = fEls.hv.value.trim().toLowerCase();
-  if(!val) return;
-  const match = customers.find(c => c.hv.trim().toLowerCase() === val);
-  if(!match) return;
-  if(!fEls.hvStr.value) fEls.hvStr.value = match.hvStr;
-  if(!fEls.hvPlz.value) fEls.hvPlz.value = match.hvPlz;
-  if(!fEls.hvOrt.value) fEls.hvOrt.value = match.hvOrt;
-  if(!fEls.hvMail.value) fEls.hvMail.value = match.hvMail;
-});
+// Autofill Adresse + Rechnungsmail wenn diese Hausverwaltung schon bei einem anderen Kunden erfasst ist.
+function attachHvAutofill(prefix){
+  $('f-'+prefix+'-name').addEventListener('input', () => {
+    const val = $('f-'+prefix+'-name').value.trim().toLowerCase();
+    if(!val) return;
+    const match = findHvByName(val);
+    if(!match) return;
+    ['str','plz','ort','mail'].forEach(k => {
+      const el = $('f-'+prefix+'-'+k);
+      if(!el.value) el.value = match['hv'+k[0].toUpperCase()+k.slice(1)];
+    });
+  });
+}
+attachHvAutofill('hv0');
+attachHvAutofill('hv1');
 
 $('new-btn').addEventListener('click', () => openModal());
 $('cancel-btn').addEventListener('click', closeModal);
 $('modal-overlay').addEventListener('click', e => { if(e.target.id==='modal-overlay') closeModal(); });
 document.addEventListener('keydown', e => { if(e.key==='Escape') closeModal(); });
 
+// Gültig-von/bis sind nur relevant, sobald ein Wechsel (2. Hausverwaltung) hinterlegt wird.
+$('add-hv1-btn').addEventListener('click', () => {
+  $('hv1-block').classList.remove('hidden');
+  $('hv0-dates').classList.remove('hidden');
+  $('add-hv1-btn').classList.add('hidden');
+});
+$('remove-hv1-btn').addEventListener('click', () => {
+  $('hv1-block').classList.add('hidden');
+  $('hv0-dates').classList.add('hidden');
+  $('add-hv1-btn').classList.remove('hidden');
+  ['name','str','plz','ort','mail','von','bis'].forEach(k => $('f-hv1-'+k).value='');
+  $('f-hv0-von').value=''; $('f-hv0-bis').value='';
+});
+
 function nextKundennummer(){
   const nums = customers.map(c => parseInt(c.nr,10)).filter(n => !isNaN(n));
   return String(nums.length ? Math.max(...nums)+1 : 1001);
 }
 
+function fillHv(prefix, h){
+  h = h || {hv:'',hvStr:'',hvPlz:'',hvOrt:'',hvMail:'',von:'',bis:''};
+  $('f-'+prefix+'-name').value = h.hv||'';
+  $('f-'+prefix+'-str').value = h.hvStr||'';
+  $('f-'+prefix+'-plz').value = h.hvPlz||'';
+  $('f-'+prefix+'-ort').value = h.hvOrt||'';
+  $('f-'+prefix+'-mail').value = h.hvMail||'';
+  $('f-'+prefix+'-von').value = h.von||'';
+  $('f-'+prefix+'-bis').value = h.bis||'';
+}
+
 function openModal(customer){
   editingId = customer ? customer.id : null;
+  dupeConfirmed = false;
+  hideDupeWarning();
   $('form').reset();
-  fields.forEach(k => fEls[k].value = customer ? (customer[k]||'') : '');
+  $('hv1-block').classList.add('hidden');
+  $('hv0-dates').classList.add('hidden');
+  $('add-hv1-btn').classList.remove('hidden');
+
+  topFields.forEach(k => fEls[k].value = customer ? (customer[k]||'') : '');
   if(!customer) fEls.nr.value = nextKundennummer();
+
+  fillHv('hv0', customer ? customer.hvs[0] : null);
+  if(customer && customer.hvs.length > 1){
+    fillHv('hv1', customer.hvs[1]);
+    $('hv1-block').classList.remove('hidden');
+    $('hv0-dates').classList.remove('hidden');
+    $('add-hv1-btn').classList.add('hidden');
+  } else {
+    fillHv('hv1', null);
+  }
+
   $('modal-title').textContent = customer ? 'Kunde bearbeiten' : 'Neuer Kunde';
   $('modal-overlay').style.display = 'flex';
   fEls.obj.focus();
@@ -207,10 +320,42 @@ function closeModal(){
   editingId = null;
 }
 
+['obj','oStr','oPlz','oOrt'].forEach(k => fEls[k].addEventListener('input', () => { dupeConfirmed=false; hideDupeWarning(); }));
+
 $('form').addEventListener('submit', e => {
   e.preventDefault();
+
+  if(!dupeConfirmed){
+    const matches = findPotentialDupes(fEls.obj.value.trim(), fEls.oStr.value.trim(), fEls.oPlz.value.trim(), fEls.oOrt.value.trim(), editingId);
+    if(matches.length){
+      showDupeWarning(matches);
+      dupeConfirmed = true;
+      return;
+    }
+  }
+
   const data = { id: editingId || uid() };
-  fields.forEach(k => data[k] = fEls[k].value.trim());
+  topFields.forEach(k => data[k] = fEls[k].value.trim());
+
+  const hv0 = {
+    hv: $('f-hv0-name').value.trim(), hvStr: $('f-hv0-str').value.trim(),
+    hvPlz: $('f-hv0-plz').value.trim(), hvOrt: $('f-hv0-ort').value.trim(),
+    hvMail: $('f-hv0-mail').value.trim(), von:'', bis:''
+  };
+  const secondActive = !$('hv1-block').classList.contains('hidden') && $('f-hv1-name').value.trim();
+  if(secondActive){
+    hv0.von = $('f-hv0-von').value;
+    hv0.bis = $('f-hv0-bis').value;
+    const hv1 = {
+      hv: $('f-hv1-name').value.trim(), hvStr: $('f-hv1-str').value.trim(),
+      hvPlz: $('f-hv1-plz').value.trim(), hvOrt: $('f-hv1-ort').value.trim(),
+      hvMail: $('f-hv1-mail').value.trim(), von: $('f-hv1-von').value, bis: $('f-hv1-bis').value
+    };
+    data.hvs = [hv0, hv1];
+  } else {
+    data.hvs = [hv0];
+  }
+
   if(editingId){
     customers = customers.map(c => c.id===editingId ? data : c);
   } else {
@@ -225,7 +370,6 @@ function editCustomer(id){
   const c = customers.find(x=>x.id===id);
   if(c) openModal(c);
 }
-
 function deleteCustomer(id){
   if(!confirm('Diesen Kunden wirklich löschen?')) return;
   customers = customers.filter(c=>c.id!==id);
@@ -240,8 +384,27 @@ document.querySelectorAll('th[data-k]').forEach(th => {
     render();
   });
 });
-
 ['search','filter-ort','filter-hv','filter-dupe'].forEach(id => $(id).addEventListener('input', render));
+
+function fmtDate(d){ if(!d) return ''; const [y,m,day]=d.split('-'); return `${day}.${m}.${y}`; }
+
+// Die aktuell gültige Hausverwaltung: bei genau einer Eintragung diese, sonst die,
+// deren Gültigkeitszeitraum das heutige Datum enthält (offene von/bis gelten als unbegrenzt).
+function primaryHv(c){
+  if(c.hvs.length===1) return c.hvs[0];
+  const today = new Date().toISOString().slice(0,10);
+  return c.hvs.find(h => (!h.von || h.von<=today) && (!h.bis || h.bis>=today)) || c.hvs[0];
+}
+function otherHv(c){
+  if(c.hvs.length<2) return null;
+  const p = primaryHv(c);
+  return c.hvs.find(h => h!==p) || null;
+}
+function sortVal(c,k){
+  if(k==='hv') return primaryHv(c).hv||'';
+  if(k==='hvMail') return primaryHv(c).hvMail||'';
+  return c[k]||'';
+}
 
 function render(){
   refreshDatalists();
@@ -253,36 +416,45 @@ function render(){
 
   let list = customers.filter(c => {
     if(fOrt && c.oOrt!==fOrt) return false;
-    if(fHv && c.hv!==fHv) return false;
+    if(fHv && !c.hvs.some(h=>h.hv===fHv)) return false;
     if(onlyDupes && !dupeIds.has(c.id)) return false;
     if(q){
-      const hay = fields.map(k=>c[k]||'').join(' ').toLowerCase();
+      const hay = [c.nr,c.obj,c.oStr,c.oPlz,c.oOrt, ...c.hvs.flatMap(h=>[h.hv,h.hvStr,h.hvPlz,h.hvOrt,h.hvMail,h.von,h.bis])]
+        .join(' ').toLowerCase();
       if(!hay.includes(q)) return false;
     }
     return true;
   });
 
   list.sort((a,b) => {
-    const av=(a[sortKey]||'').toString(), bv=(b[sortKey]||'').toString();
+    const av=sortVal(a,sortKey).toString(), bv=sortVal(b,sortKey).toString();
     return sortAsc ? av.localeCompare(bv,'de',{numeric:true}) : bv.localeCompare(av,'de',{numeric:true});
   });
 
   const tbody = $('rows');
-  tbody.innerHTML = list.map(c => `
-    <tr class="${dupeIds.has(c.id)?'dupe':''}">
+  tbody.innerHTML = list.map(c => {
+    const p = primaryHv(c), o = otherHv(c);
+    const today = new Date().toISOString().slice(0,10);
+    let note = '';
+    if(o){
+      note = (o.von && o.von>today)
+        ? `wechselt ab ${fmtDate(o.von)} zu ${esc(o.hv)}`
+        : `zuvor ${esc(o.hv)}${o.bis?` (bis ${fmtDate(o.bis)})`:''}`;
+    }
+    return `
+    <tr class="${dupeIds.has(c.id)?'dupe':''}" data-id="${c.id}">
       <td>${esc(c.nr)}</td>
       <td>${esc(c.obj)} ${dupeIds.has(c.id)?'<span class="badge">Duplikat?</span>':''}</td>
       <td>${esc(c.oStr)}, ${esc(c.oPlz)}</td>
       <td>${esc(c.oOrt)}</td>
-      <td>${esc(c.hv)}</td>
-      <td>${esc(c.hvMail)}</td>
-      <td>${esc(c.von)}</td>
-      <td>${esc(c.bis)}</td>
+      <td>${esc(p.hv)}${note?`<div class="note">${note}</div>`:''}</td>
+      <td>${esc(p.hvMail)}</td>
       <td>
         <button class="btn-secondary" style="padding:4px 10px;font-size:.75rem" onclick="editCustomer('${c.id}')">Bearbeiten</button>
         <button class="btn-danger" onclick="deleteCustomer('${c.id}')">Löschen</button>
       </td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 
   $('empty').style.display = list.length ? 'none' : 'block';
   $('count').textContent = `${list.length} von ${customers.length} Kunden`;
@@ -290,24 +462,92 @@ function render(){
 
 function esc(s){ return (s||'').toString().replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
-// Beispieldaten (Vorarlberg) inkl. zweier Duplikatspaare zum Testen der Erkennung
+// --- Beispieldaten: ~1000 Datensätze aus Vorarlberg, davon ~60 bewusste Tippfehler-Duplikate,
+// plus ein paar Objekte mit bereits bekanntem Hausverwaltungswechsel zum 1.1. des Folgejahres. ---
+function mulberry32(seed){
+  return function(){
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed>>>15, 1 | seed);
+    t = t + Math.imul(t ^ t>>>7, 61 | t) ^ t;
+    return ((t ^ t>>>14) >>> 0) / 4294967296;
+  };
+}
+function typoOf(s, rng){
+  const chars = s.split('');
+  const i = Math.max(1, Math.floor(rng()*(chars.length-1)));
+  const mode = Math.floor(rng()*3);
+  if(mode===0) chars[i] = chars[i]===chars[i].toLowerCase() ? String.fromCharCode(chars[i].charCodeAt(0)+1) : chars[i];
+  else if(mode===1) chars.splice(i,0,chars[i]);
+  else chars.splice(i,1);
+  return chars.join('');
+}
+
 function seedData(){
-  const mk = (nr,obj,oStr,oPlz,oOrt,hv,hvStr,hvPlz,hvOrt,hvMail,von,bis) =>
-    ({id:uid(),nr,obj,oStr,oPlz,oOrt,hv,hvStr,hvPlz,hvOrt,hvMail,von,bis});
-  return [
-    mk('1001','Wohnanlage Seeblick','Seestraße 12','6900','Bregenz','Alpin Hausverwaltung GmbH','Rathausstraße 5','6900','Bregenz','buchhaltung@alpin-hv.at','2023-01-01','2025-12-31'),
-    mk('1002','Haus Rheintal','Poststraße 3','6850','Dornbirn','Rheintal Immobilien Service','Marktplatz 1','6850','Dornbirn','rechnung@rheintal-immo.at','2023-03-01','2026-02-28'),
-    mk('1003','Wohnpark Montfort','Schlossgraben 8','6800','Feldkirch','Montfort Hausverwaltung KG','Neustadt 22','6800','Feldkirch','office@montfort-hv.at','2022-06-01','2025-05-31'),
-    mk('1004','Residenz Bludenz','Werdenbergerstraße 15','6700','Bludenz','Alpin Hausverwaltung GmbH','Rathausstraße 5','6900','Bregenz','buchhaltung@alpin-hv.at','2024-01-01','2026-12-31'),
-    mk('1005','Wohnanlage Seeblik','Seestraße 12','6900','Bregenz','Alpin Hausverwaltung GmbH','Rathausstraße 5','6900','Bregenz','buchhaltung@alpin-hv.at','2023-01-01','2025-12-31'),
-    mk('1006','Gewerbepark Lustenau','Millennium Park 2','6890','Lustenau','Rheintal Immobilien Service','Marktplatz 1','6850','Dornbirn','rechnung@rheintal-immo.at','2023-09-01','2025-08-31'),
-    mk('1007','Haus am Ried','Riedgasse 9','6845','Hohenems','Hohenems Wohnbau Verwaltung','Schweizer Straße 4','6845','Hohenems','verwaltung@hohenems-wohnbau.at','2022-01-01','2024-12-31'),
-    mk('1008','Haus am Reid','Riedgasse 9','6845','Hohenems','Hohenems Wohnbau Verwaltung','Schweizer Straße 4','6845','Hohenems','verwaltung@hohenems-wohnbau.at','2022-01-01','2024-12-31'),
-    mk('1009','Wohnhaus Götzis Nord','Hauptstraße 44','6840','Götzis','Montfort Hausverwaltung KG','Neustadt 22','6800','Feldkirch','office@montfort-hv.at','2024-04-01','2027-03-31'),
-    mk('1010','Sonnenhof Rankweil','Bahnhofstraße 7','6830','Rankweil','Rankweil Immobilienverwaltung','Ringstraße 12','6830','Rankweil','info@rankweil-immoverwaltung.at','2023-07-01','2026-06-30'),
-    mk('1011','Panoramahaus Bregenz','Achstraße 21','6900','Bregenz','Alpin Hausverwaltung GmbH','Rathausstraße 5','6900','Bregenz','buchhaltung@alpin-hv.at','2024-02-01','2027-01-31'),
-    mk('1012','Wohnanlage Kirchdorf','Kirchstraße 18','6800','Feldkirch','Montfort Hausverwaltung KG','Neustadt 22','6800','Feldkirch','office@montfort-hv.at','2023-05-01','2026-04-30'),
+  const rng = mulberry32(1234567);
+  const pick = a => a[Math.floor(rng()*a.length)];
+  const randInt = (min,max) => min + Math.floor(rng()*(max-min+1));
+  const YEAR = new Date().getFullYear();
+
+  const ORTE = [
+    {ort:'Bregenz',plz:'6900'},{ort:'Dornbirn',plz:'6850'},{ort:'Feldkirch',plz:'6800'},{ort:'Bludenz',plz:'6700'},
+    {ort:'Lustenau',plz:'6890'},{ort:'Hohenems',plz:'6845'},{ort:'Götzis',plz:'6840'},{ort:'Rankweil',plz:'6830'},
+    {ort:'Lauterach',plz:'6923'},{ort:'Wolfurt',plz:'6922'},{ort:'Hard',plz:'6971'},{ort:'Lochau',plz:'6911'},
+    {ort:'Nenzing',plz:'6710'},{ort:'Bürs',plz:'6706'},{ort:'Schruns',plz:'6780'},{ort:'Egg',plz:'6863'},
+    {ort:'Hittisau',plz:'6952'},{ort:'Alberschwende',plz:'6870'},{ort:'Höchst',plz:'6973'},{ort:'Frastanz',plz:'6820'},
+    {ort:'Altach',plz:'6844'},{ort:'Mäder',plz:'6841'},{ort:'Sulz',plz:'6832'},{ort:'Meiningen',plz:'6812'},
   ];
+  const STRASSEN = ['Bahnhofstraße','Kirchstraße','Hauptstraße','Poststraße','Marktstraße','Schulgasse','Gartenweg',
+    'Seestraße','Ringstraße','Feldweg','Ahornweg','Birkenweg','Lindenstraße','Rheinstraße','Bergstraße','Wiesenweg',
+    'Industriestraße','Neustadt','Schlossgraben','Riedgasse','Achstraße','Werdenbergerstraße','Millennium Park','Schweizer Straße'];
+  const OBJ_TYPES = ['Wohnanlage','Haus','Wohnpark','Residenz','Gewerbepark','Sonnenhof','Wohnhaus','Panoramahaus','Bürohaus','Mehrfamilienhaus','Siedlung','Anwesen'];
+  const OBJ_NAMES = ['Seeblick','Rheintal','Montfort','Bergblick','Rosengarten','Ährenfeld','Sonnenberg','Waldheim',
+    'Lindenhof','Kirchfeld','Talblick','Alpenblick','Hoffeld','Gartenstadt','Rheinpark','Schlosspark','Panorama',
+    'Nordpark','Ried','Au','Halde','Hub','Vorderland','Hinterland','Bühel','Wiesental','Buchenweg','Ahornhof','Birkenpark'];
+  const HV_FIRMEN = [
+    {hv:'Alpin Hausverwaltung GmbH', str:'Rathausstraße 5', plz:'6900', ort:'Bregenz', mail:'buchhaltung@alpin-hv.at'},
+    {hv:'Rheintal Immobilien Service', str:'Marktplatz 1', plz:'6850', ort:'Dornbirn', mail:'rechnung@rheintal-immo.at'},
+    {hv:'Montfort Hausverwaltung KG', str:'Neustadt 22', plz:'6800', ort:'Feldkirch', mail:'office@montfort-hv.at'},
+    {hv:'Hohenems Wohnbau Verwaltung', str:'Schweizer Straße 4', plz:'6845', ort:'Hohenems', mail:'verwaltung@hohenems-wohnbau.at'},
+    {hv:'Rankweil Immobilienverwaltung', str:'Ringstraße 12', plz:'6830', ort:'Rankweil', mail:'info@rankweil-immoverwaltung.at'},
+    {hv:'Bodensee Hausverwaltung GmbH', str:'Seepromenade 8', plz:'6900', ort:'Bregenz', mail:'kontakt@bodensee-hv.at'},
+    {hv:'Ländle Immo Management', str:'Interpark Focus 4', plz:'6832', ort:'Sulz', mail:'buchhaltung@laendle-immo.at'},
+    {hv:'Walgau Hausverwaltung', str:'Bahnhofstraße 9', plz:'6710', ort:'Nenzing', mail:'office@walgau-hv.at'},
+    {hv:'Bregenzerwald Immobilien GmbH', str:'Platzstraße 3', plz:'6863', ort:'Egg', mail:'rechnung@bwald-immo.at'},
+    {hv:'Silvretta Hausverwaltung', str:'Kirchplatz 2', plz:'6780', ort:'Schruns', mail:'info@silvretta-hv.at'},
+    {hv:'Klostertal Immo Service', str:'Hauptstraße 14', plz:'6700', ort:'Bludenz', mail:'verwaltung@klostertal-immo.at'},
+    {hv:'Ziegelfeld Hausverwaltung OG', str:'Millennium Park 5', plz:'6890', ort:'Lustenau', mail:'buchhaltung@ziegelfeld-hv.at'},
+  ];
+
+  const TOTAL = 1000, DUPES = 60, BASE = TOTAL - DUPES;
+  const list = [];
+  let nr = 1001;
+
+  for(let i=0;i<BASE;i++){
+    const loc = pick(ORTE);
+    const oStr = `${pick(STRASSEN)} ${randInt(1,60)}`;
+    const obj = `${pick(OBJ_TYPES)} ${pick(OBJ_NAMES)}`;
+    const hvF = pick(HV_FIRMEN);
+    const hv0 = {hv:hvF.hv, hvStr:hvF.str, hvPlz:hvF.plz, hvOrt:hvF.ort, hvMail:hvF.mail, von:'', bis:''};
+    const hvs = [hv0];
+    if(rng() < 0.06){
+      let hvF2 = pick(HV_FIRMEN);
+      while(hvF2.hv===hvF.hv) hvF2 = pick(HV_FIRMEN);
+      hv0.bis = `${YEAR}-12-31`;
+      hvs.push({hv:hvF2.hv, hvStr:hvF2.str, hvPlz:hvF2.plz, hvOrt:hvF2.ort, hvMail:hvF2.mail, von:`${YEAR+1}-01-01`, bis:''});
+    }
+    list.push({id:uid(), nr:String(nr++), obj, oStr, oPlz:loc.plz, oOrt:loc.ort, hvs});
+  }
+
+  for(let i=0;i<DUPES;i++){
+    const src = list[randInt(0, list.length-1)];
+    const hvF = pick(HV_FIRMEN);
+    list.push({
+      id:uid(), nr:String(nr++),
+      obj: typoOf(src.obj, rng), oStr:src.oStr, oPlz:src.oPlz, oOrt:src.oOrt,
+      hvs:[{hv:hvF.hv, hvStr:hvF.str, hvPlz:hvF.plz, hvOrt:hvF.ort, hvMail:hvF.mail, von:'', bis:''}]
+    });
+  }
+  return list;
 }
 
 render();
