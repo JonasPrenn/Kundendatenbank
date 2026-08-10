@@ -49,7 +49,10 @@
       <label><input type="checkbox" id="filter-dupe"> Nur mögliche Duplikate</label>
       <span class="count" id="count"></span>
     </div>
-    <button class="btn-primary" id="new-btn">+ Neuer Kunde</button>
+    <div style="display:flex;gap:8px">
+      <button class="btn-secondary" id="seed-btn">Beispieldaten laden</button>
+      <button class="btn-primary" id="new-btn">+ Neuer Kunde</button>
+    </div>
   </div>
   <div style="overflow-x:auto">
     <table>
@@ -100,7 +103,7 @@
 <script>
 const LS_KEY = 'kundendatenbank';
 let customers = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
-if(customers === null){ customers = seedData(); localStorage.setItem(LS_KEY, JSON.stringify(customers)); }
+if(!customers || customers.length === 0){ customers = seedData(); localStorage.setItem(LS_KEY, JSON.stringify(customers)); }
 
 let editingId = null;
 let sortKey = 'nr', sortAsc = true;
@@ -169,17 +172,29 @@ fEls.hv.addEventListener('input', () => {
 });
 
 $('new-btn').addEventListener('click', () => openModal());
+$('seed-btn').addEventListener('click', () => {
+  if(customers.length && !confirm('Beispieldaten zusätzlich zu den vorhandenen Kunden laden?')) return;
+  customers = customers.concat(seedData());
+  save();
+  render();
+});
 $('cancel-btn').addEventListener('click', closeModal);
 $('modal-overlay').addEventListener('click', e => { if(e.target.id==='modal-overlay') closeModal(); });
 document.addEventListener('keydown', e => { if(e.key==='Escape') closeModal(); });
+
+function nextKundennummer(){
+  const nums = customers.map(c => parseInt(c.nr,10)).filter(n => !isNaN(n));
+  return String(nums.length ? Math.max(...nums)+1 : 1001);
+}
 
 function openModal(customer){
   editingId = customer ? customer.id : null;
   $('form').reset();
   fields.forEach(k => fEls[k].value = customer ? (customer[k]||'') : '');
+  if(!customer) fEls.nr.value = nextKundennummer();
   $('modal-title').textContent = customer ? 'Kunde bearbeiten' : 'Neuer Kunde';
   $('modal-overlay').style.display = 'flex';
-  fEls.nr.focus();
+  fEls.obj.focus();
 }
 function closeModal(){
   $('modal-overlay').style.display = 'none';
