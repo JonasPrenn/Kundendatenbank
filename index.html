@@ -53,12 +53,16 @@
       <label><input type="checkbox" id="filter-dupe"> Nur mögliche Duplikate</label>
       <span class="count" id="count"></span>
     </div>
-    <button class="btn-primary" id="new-btn">+ Neuer Kunde</button>
+    <div style="display:flex;gap:8px">
+      <button class="btn-secondary" id="merge-btn" disabled>Zusammenführen</button>
+      <button class="btn-primary" id="new-btn">+ Neuer Kunde</button>
+    </div>
   </div>
   <div style="overflow-x:auto">
     <table>
       <thead>
         <tr>
+          <th style="cursor:default"></th>
           <th data-k="nr">Kd.-Nr.</th><th data-k="obj">Objekt</th><th data-k="oStr">Objektadresse</th>
           <th data-k="oOrt">Ort</th><th data-k="hv">Hausverwaltung</th><th data-k="hvMail">Rechnungsmail</th><th></th>
         </tr>
@@ -66,6 +70,18 @@
       <tbody id="rows"></tbody>
     </table>
     <div id="empty" class="empty" style="display:none">Keine Kunden gefunden.</div>
+  </div>
+</div>
+
+<div class="overlay" id="merge-overlay" style="display:none">
+  <div class="modal" style="max-width:720px">
+    <h2>Datensätze zusammenführen</h2>
+    <p class="note" style="margin:0 0 14px">Pro Zeile auswählen, welcher Wert im zusammengeführten Datensatz übernommen wird. Die übrigen ausgewählten Datensätze werden danach gelöscht.</p>
+    <div id="merge-body" style="overflow-x:auto"></div>
+    <div class="actions" style="margin-top:16px">
+      <button type="button" class="btn-secondary" id="merge-cancel-btn">Abbrechen</button>
+      <button type="button" class="btn-primary" id="merge-confirm-btn">Zusammenführen</button>
+    </div>
   </div>
 </div>
 
@@ -140,6 +156,8 @@ if(!customers || customers.length === 0){ customers = seedData(); save(); }
 let editingId = null;
 let dupeConfirmed = false;
 let sortKey = 'nr', sortAsc = true;
+let selectedIds = new Set();
+let mergeRecords = [];
 
 const $ = id => document.getElementById(id);
 const topFields = ['nr','obj','oStr','oPlz','oOrt'];
@@ -259,6 +277,69 @@ $('cancel-btn').addEventListener('click', closeModal);
 $('modal-overlay').addEventListener('click', e => { if(e.target.id==='modal-overlay') closeModal(); });
 document.addEventListener('keydown', e => { if(e.key==='Escape') closeModal(); });
 
+// --- Auswahl von Datensätzen zum Zusammenführen ---
+function updateMergeButton(){
+  const btn = $('merge-btn');
+  btn.disabled = selectedIds.size < 2;
+  btn.textContent = selectedIds.size ? `Zusammenführen (${selectedIds.size})` : 'Zusammenführen';
+}
+$('rows').addEventListener('change', e => {
+  if(!e.target.classList.contains('row-check')) return;
+  const id = e.target.dataset.id;
+  if(e.target.checked) selectedIds.add(id); else selectedIds.delete(id);
+  updateMergeButton();
+});
+
+$('merge-btn').addEventListener('click', () => {
+  mergeRecords = customers.filter(c => selectedIds.has(c.id));
+  if(mergeRecords.length < 2) return;
+  const rows = [
+    {key:'nr', label:'Kundennummer', val:c=>c.nr},
+    {key:'obj', label:'Objektbezeichnung', val:c=>c.obj},
+    {key:'addr', label:'Objektadresse', val:c=>`${c.oStr}, ${c.oPlz} ${c.oOrt}`},
+    {key:'hv', label:'Hausverwaltung', val:c=>c.hvs.map(h=>h.hv).join(' → ')},
+  ];
+  $('merge-body').innerHTML = `
+    <table>
+      <thead><tr><th></th>${mergeRecords.map((c,i)=>`<th>Datensatz ${i+1}</th>`).join('')}</tr></thead>
+      <tbody>
+        ${rows.map(r => `
+          <tr>
+            <td style="font-weight:600">${r.label}</td>
+            ${mergeRecords.map((c,i) => `
+              <td>
+                <label style="display:flex;align-items:flex-start;gap:6px;font-weight:400;white-space:normal">
+                  <input type="radio" name="merge-${r.key}" value="${i}" ${i===0?'checked':''}>
+                  <span>${esc(r.val(c))}</span>
+                </label>
+              </td>`).join('')}
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+  $('merge-overlay').style.display = 'flex';
+});
+
+$('merge-cancel-btn').addEventListener('click', () => { $('merge-overlay').style.display='none'; });
+$('merge-overlay').addEventListener('click', e => { if(e.target.id==='merge-overlay') $('merge-overlay').style.display='none'; });
+
+$('merge-confirm-btn').addEventListener('click', () => {
+  const pick = key => mergeRecords[parseInt(document.querySelector(`input[name="merge-${key}"]:checked`).value,10)];
+  const nrSrc = pick('nr'), objSrc = pick('obj'), addrSrc = pick('addr'), hvSrc = pick('hv');
+  const merged = {
+    id: uid(), nr: nrSrc.nr, obj: objSrc.obj,
+    oStr: addrSrc.oStr, oPlz: addrSrc.oPlz, oOrt: addrSrc.oOrt,
+    hvs: hvSrc.hvs
+  };
+  const mergedIds = new Set(mergeRecords.map(c=>c.id));
+  customers = customers.filter(c => !mergedIds.has(c.id));
+  customers.push(merged);
+  save();
+  selectedIds.clear();
+  $('merge-overlay').style.display = 'none';
+  updateMergeButton();
+  render();
+});
+
 // Gültig-von/bis sind nur relevant, sobald ein Wechsel (2. Hausverwaltung) hinterlegt wird.
 $('add-hv1-btn').addEventListener('click', () => {
   $('hv1-block').classList.remove('hidden');
@@ -373,6 +454,8 @@ function editCustomer(id){
 function deleteCustomer(id){
   if(!confirm('Diesen Kunden wirklich löschen?')) return;
   customers = customers.filter(c=>c.id!==id);
+  selectedIds.delete(id);
+  updateMergeButton();
   save();
   render();
 }
@@ -443,6 +526,7 @@ function render(){
     }
     return `
     <tr class="${dupeIds.has(c.id)?'dupe':''}" data-id="${c.id}">
+      <td><input type="checkbox" class="row-check" data-id="${c.id}" ${selectedIds.has(c.id)?'checked':''}></td>
       <td>${esc(c.nr)}</td>
       <td>${esc(c.obj)} ${dupeIds.has(c.id)?'<span class="badge">Duplikat?</span>':''}</td>
       <td>${esc(c.oStr)}, ${esc(c.oPlz)}</td>
